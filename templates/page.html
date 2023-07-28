@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<head>
+	<html lang="en">
+	<meta charset="UTF-8">
+	<title>{{title}} - {{site_name}}</title>
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+	<link rel="stylesheet" href="{{ url_for('static', filename='code.css') }}">
+
+</head>
+<body>
+	{{content|safe}}
+</body>
+</html>

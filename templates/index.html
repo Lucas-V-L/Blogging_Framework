@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<head>
+	<html lang="en">
+	<meta charset="UTF-8">
+	<title>{{site_name}}</title>
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+	<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+	<style>
+		.featured {
+			background-image: url("/posts/{{featured}}/images/banner.png");
+		}
+	</style>
+
+</head>
+<body>
+<div class="wrap-all">
+	
+	<a href="posts/{{featured}}">
+		<div class="featured">
+			{% set postinfo = get_post_info(featured) %}
+			<h1>{{postinfo["title"]}}</h1>
+			<p>{{postinfo["description"]}}</p>
+		</div>
+	</a>
+
+	<div class="posts">
+		{% for post in allposts %}
+		{% set postinfo = get_post_info(post) %}
+		<a href='posts/{{post}}' class="postwrapper">
+			<div class="post">
+				<img class="thumbnail" src="/posts/{{post}}/images/thumbnail.png" width="55px" height="55px">
+				<div class="importance">{{postinfo["importance"]}}</div>
+				<h3>{{postinfo["title"]}}</h3>
+				<p class="description">{{postinfo["description"]}}</p>
+				<div class="categories">
+					{% for category in postinfo["categories"] %}
+						{{category}} 
+					{% endfor %}
+				</div>
+			</div>
+		</a>
+		{% endfor %}
+	</div>
+
+</div>
+</body>
+</html>

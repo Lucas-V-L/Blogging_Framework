@@ -1,0 +1,15 @@
+{% if wrongname %}
+<p> Username not found! </p>
+{% endif %}
+
+{% if wrongpass %}
+<p> Wrong password! try again </p>
+{% endif %}
+
+<form method="post">
+  <label for="username">Username:</label><br>
+  <input type="text" id="username" name="username"><br>
+  <label for="password">Password:</label><br>
+  <input type="password" id="password" name="password">
+  <input type="submit" value="Submit">
+</form>

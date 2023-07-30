@@ -1,22 +1,39 @@
 <form method="POST">
-	<input type="checkbox" id="featured" name="featured">
-	<label for="featured"> Featured</label><br>
-	
-	<label for="category-0">Category: </label>
-	<input type="text" id="category-0" name="category-0"><br>
+	<label for="banner">Choose a banner image (defaults to randomly generated gradient - will be scaled and cropped to 1920x640px) </label>
+	<input type="file" id="banner" name="banner" accept="image/*"><br>
 
-	<input type="radio" id="urgent" name="importance" value="urgent">
-	<label for="urgent">Urgent</label><br>
-	<input type="radio" id="important" name="importance" value="important">
-	<label for="important">Important</label><br>
-	<input type="radio" id="unimportant" name="importance" value="unimportant">
-	<label for="unimportant">Unimportant</label><br>
+	<label for="thumbnail">Choose a thumbnail image (defaults to server default - will be scaled and cropped to 256x256px) </label>
+	<input type="file" id="thumbnail" name="thumbnail" accept="image/*"><br>
+	
+	<label for="favicon">Choose a favicon image (defaults to server default - will be scaled and cropped to 32x32px) </label>
+	<input type="file" id="favicon" name="favicon" accept="image/*"><br>
+
+	<label for="og">Choose an og image (social media preview - defaults to banner image with post title overlayed - will be scaled and cropped to 1200:630px) </label>
+	<input type="file" id="og" name="og" accept="image/*"><br>
+
+
+	<input type="checkbox" id="featured" name="featured" {% if featured %}checked{% endif%}>
+	<label for="featured"> Featured</label><br>
+	{% if mode=='edit' %}
+	{% for category in categories %}
+		<label for="category-{{ loop.index0 }}">Category: </label>
+		<input type="text" id="category-{{ loop.index0 }}" name="category-{{ loop.index0 }}" value="{{ category }}"><br>
+	{% endfor %}
+	{% else %}
+		<label for="category-0">Category: </label>
+		<input type="text" id="category-0" name="category-0" value="{{ category }}"><br>
+	{% endif %}
+
+	{% for importance in urgencies %}
+	<input type="radio" id="{{importance}}" name="importance" value="{{importance}}" {% if mode=='edit' and importance==postimportance %}checked{% endif %}>
+	<label for="{{importance}}">{{importance}}</label><br>
+	{% endfor %}
 
 	<label for="title">Title: </label>
-	<input type="text" id="title" name="title"><br>
+	<input type="text" id="title" name="title" value="{% if mode=='edit' %}{{ title }}{% endif %}"><br>
 	
 	<label for="description">Description: </label>
-	<input type="text" id="description" name="description"><br>
+	<input type="text" id="description" name="description" value="{% if mode=='edit' %}{{ description }}{% endif %}"><br>
 
 	<textarea id="content" name="content" rows="4" cols="50">{% if mode=="edit" %}{{ content }}{% endif %}</textarea>
 

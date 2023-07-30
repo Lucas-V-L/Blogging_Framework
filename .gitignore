@@ -6,6 +6,9 @@ __pycache__/
 # C extensions
 *.so
 
+# profiler data dir
+profile/
+
 # Distribution / packaging
 .Python
 build/

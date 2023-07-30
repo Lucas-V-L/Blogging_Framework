@@ -6,20 +6,30 @@ from flask import Flask, render_template, abort, send_from_directory, session, r
 from misc_functions import read_cached, get_post_content, get_post_info, limit_content_length
 import json, hashlib, os, time, shutil, base64
 
-app = Flask(__name__)
+# makes sure this always runs from the folder its in, otherwise it breaks
+abspath = os.path.abspath(__file__)
+dname = os.path.dirname(abspath)
+os.chdir(dname)
 
+app = Flask(__name__)
 
 # TODO: put this in a config file
 CONF_SITE_NAME = "Blogging Framework"
 CONF_MAX_CATEGORIES_PER_POST = 10
 CONF_MAX_CATEGORY_NAME_LENGTH = 20
-CONF_MAX_TITLE_LENTH = 50
+CONF_MAX_TITLE_LENGTH = 50
 CONF_MAX_IMPORTANCE_NAME_LENGTH = 15
-CONF_MAX_DESCRIPTION_LENTH = 200
+CONF_MAX_DESCRIPTION_LENGTH = 200
 CONF_STAY_LOGGED_IN_DURATION = 60 # 1 minute - resets on refresh
 CONF_TOTAL_STAY_LOGGED_IN_DURATION = 120 # 10 minutes - if the user has been logged in for longer than this amount of time, they will be logged out no matter what
 CONF_ENABLE_LOGIN_KEEPALIVE = True # login keepalive allows the max total stay logged in duration to be extended by 120 seconds every 110 seconds. this happens automatically on the post editor page to ensure a logout does not occur while a post is being edited before it can be saved
-CONF_DEBUG_ENABLE = True
+CONF_DEBUG_ENABLE = False
+CONF_HOST = "127.0.0.1"
+CONF_USE_SOCKET = False
+CONF_UNIX_SOCKET = "./socket.sock"
+CONF_UNIX_SOCKET_PERMS = "777"
+CONF_PORT = 8080
+CONF_URL_PREFIX = ""
 
 
 with open("db.json", "r") as dbfile:
@@ -29,6 +39,7 @@ with open("users.json", "r") as userdb:
     users = json.loads(userdb.read())
 
 logged_in_db = {}
+past_used_keys = []
 
 @app.route("/", methods=["GET"])
 def homepage():
@@ -105,9 +116,9 @@ def admin(page=None, argument=None):
 #
 # KEEPALIVE - not a user facing page but for behind the scenes stuff
 #
-    if page == "login-keepalive" and CONF_ENABLE_LOGIN_KEEPALIVE: # adds time to initial access, but rate limited. this is so that a script on the editor page can keep the user from being logged out before they can save their work.
+    if page == "login-keepalive" and CONF_ENABLE_LOGIN_KEEPALIVE: # adds time to initial access, but rate limited. this is so that a script on the editor page can keep the user from being logged out before they can save their work. also keeps the last access topped up because its a ping to the admin page
         if time.time() - logged_in_db[user_id]["last_keepalive"] > 110: 
-            logged_in_db[user_id]["initial_access"] += 120
+            logged_in_db[user_id]["initial_access"] += 120 
             logged_in_db[user_id]["last_keepalive"] = time.time()
             return ('', 204)
         else: abort(429)
@@ -141,17 +152,26 @@ def admin(page=None, argument=None):
 
         # here's where the real shit happens. takes the input from the post editors and actually does stuff with it (wow!). this stuff includes first determining if the request is a post or edit, putting the form data into a json file, and then putting the post content into a markdown file. it also handles making and/or editing all the necessary images.
         elif request.method == "POST":
+
             usednames = os.listdir("blogs/")
             if page == "new": # only run this if making a new post, because if we are editing we dont want to make a new file
-                name_prefix = time.strftime("%m-%d-%Y", time.localtime(time.time())) # TODO: in the future i plan on having this change based on a timezone the browser sends, but for now this works
+                name_prefix = time.strftime("%m-%d-%Y", time.localtime(time.time()))
                 count = 0
                 while f"{name_prefix}-{count}" in usednames: count += 1 # makes a unique filename by counting up along the numbers after the date - which is set to server time.
                 name = f"{name_prefix}-{count}"
                 os.makedirs(f"blogs/{name}")
                 db["allposts"].append(name)
+                author = username
+                editors = []
+
             elif page == "edit": # only run if we are editing, preserves old name in url which is safe because we checked it against known safe filenames earlier
                 if argument in usednames:
                     name = argument
+                    postinfo = get_post_info(argument)
+                    author = postinfo["author"]
+                    editors = postinfo["editors"]
+                    if username not in editors + [author]: editors.append(username)
+                else: abort(418) # this sort of post request will only ever be sent if hackers be hacking - return teapot
             
             try: # encase everything that could have an effect on other pieces of data in a try so if it fails we can undo everything with minimal to no manual repair
                 featured = False # default
@@ -189,7 +209,9 @@ def admin(page=None, argument=None):
                         "date": name,\
                         "importance": importance,\
                         "categories": categories,\
-                        "description": description\
+                        "description": description,\
+                        "author": author,\
+                        "editors": editors\
                     }))
                 with open(f"blogs/{name}/page.md", "w") as post:
                     post.write(request.form["content"])
@@ -204,7 +226,7 @@ def admin(page=None, argument=None):
                 # TODO: make a cool page that shows confetti or something idk
                 return "Post made sucessfully!"
 
-            except: # deletes the post folder if something goes wrong, because an incomplete post folder causes errors
+            except SyntaxError: # deletes the post folder if something goes wrong, because an incomplete post folder causes errors
                 # the or is a failsafe because im paranoid that if name isnt made for some reason itll delete the entire directory
                 shutil.rmtree(f"blogs/{name or 'SOMETHING HAS GONE TERRIBLY WRONG'}") 
                 abort(500)
@@ -224,7 +246,7 @@ def login():
             if hashedinputpass == users[uname]: # yay! login successful, set a cookie and continue to the admin dashboard
                 while True:
                     random_id = base64.b64encode(os.urandom(256))
-                    if random_id not in logged_in_db:
+                    if random_id not in logged_in_db and random_id not in past_used_keys: # overlap is extremely unlikely, but nonetheless possible
                         break
                 logged_in_db[random_id] = {"uname": uname, "last_access": time.time(), "initial_access": time.time(), "last_keepalive": time.time()}
                 session['key'] = random_id
@@ -245,9 +267,22 @@ def logout():
 
 
 if __name__ == "__main__":
+    app.secret_key = os.urandom(256) # overlap on user id _and_ key will only happen one every 13407807929942597099574024998205846127479365820592393377723561443721764030073546976801874298166903427690031858186486050853753882811946569946433649006084096 times (yes, i did the math). im willing to take those chances
     if CONF_DEBUG_ENABLE:
         from werkzeug.middleware.profiler import ProfilerMiddleware
         app.wsgi_app = ProfilerMiddleware(app.wsgi_app, restrictions=[20], profile_dir='./profile')
+        app.run(debug=CONF_DEBUG_ENABLE)
+    else:
+        from waitress import serve
+        if CONF_USE_SOCKET:
+            serve(app,\
+                  url_prefix=CONF_URL_PREFIX,\
+                  unix_socket=CONF_UNIX_SOCKET,\
+                  unix_socket_perms=CONF_UNIX_SOCKET_PERMS)
 
-    app.secret_key = os.urandom(256)
-    app.run(debug=CONF_DEBUG_ENABLE)
+        else:
+            serve(app,\
+                  host=CONF_HOST,\
+                  port=CONF_PORT,\
+                  url_prefix=CONF_URL_PREFIX)
+

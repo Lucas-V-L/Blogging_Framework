@@ -76,3 +76,18 @@ def limit_content_length(max_length):
             return f(*args, **kwargs)
         return wrapper
     return decorator
+
+def get_gradient_2d(start, stop, width, height, is_horizontal):
+    import numpy as np
+    if is_horizontal:
+        return np.tile(np.linspace(start, stop, width), (height, 1))
+    else:
+        return np.tile(np.linspace(start, stop, height), (width, 1)).T
+                    
+def get_gradient_3d(width, height, start_list, stop_list, is_horizontal_list):
+    import numpy as np
+    result = np.zeros((height, width, len(start_list)), dtype=float)
+    for i, (start, stop, is_horizontal) in enumerate(zip(start_list, stop_list, is_horizontal_list)):
+        result[:, :, i] = get_gradient_2d(start, stop, width, height, is_horizontal)
+    return result
+

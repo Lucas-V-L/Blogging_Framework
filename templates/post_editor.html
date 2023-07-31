@@ -1,4 +1,4 @@
-<form method="POST">
+<form method="POST" enctype="multipart/form-data">
 	<label for="banner">Choose a banner image (defaults to randomly generated gradient - will be scaled and cropped to 1920x640px) </label>
 	<input type="file" id="banner" name="banner" accept="image/*"><br>
 
@@ -17,17 +17,27 @@
 	{% if mode=='edit' %}
 	{% for category in categories %}
 		<label for="category-{{ loop.index0 }}">Category: </label>
-		<input type="text" id="category-{{ loop.index0 }}" name="category-{{ loop.index0 }}" value="{{ category }}"><br>
+		<input type="text" id="category-{{ loop.index0 }}" list="category-list" name="category-{{ loop.index0 }}" value="{{ category }}"><br>
 	{% endfor %}
+
 	{% else %}
 		<label for="category-0">Category: </label>
-		<input type="text" id="category-0" name="category-0" value="{{ category }}"><br>
+		<input name="category-0" id="category-0" list="category-list"><br>
 	{% endif %}
-
-	{% for importance in urgencies %}
-	<input type="radio" id="{{importance}}" name="importance" value="{{importance}}" {% if mode=='edit' and importance==postimportance %}checked{% endif %}>
-	<label for="{{importance}}">{{importance}}</label><br>
-	{% endfor %}
+	
+	<datalist id="category-list">
+		{% for category in all_categories %}
+		<option value="{{ category }}">
+		{% endfor %}
+	</datalist>
+	
+	<label for="importance">Importance: </label>
+	<input type="text" id="importance" name="importance" list="importance-list" {% if mode=='edit' %}value="{{postimportance}}"{% endif %}><br>
+	<datalist id="importance-list">
+		{% for importance in urgencies %}
+		<option value="{{importance}}">
+		{% endfor %}
+	</datalist>
 
 	<label for="title">Title: </label>
 	<input type="text" id="title" name="title" value="{% if mode=='edit' %}{{ title }}{% endif %}"><br>

@@ -2,9 +2,13 @@
 
 # use http://www.patorjk.com/software/taag to make labels
 
-from flask import Flask, render_template, abort, send_from_directory, session, redirect, request, flash, make_response
-from misc_functions import read_cached, get_post_content, get_post_info, limit_content_length
-import json, hashlib, os, time, shutil, base64
+from flask import Flask, render_template, abort, send_from_directory, session, redirect, request, flash, make_response, url_for
+from misc_functions import read_cached, get_post_content, get_post_info, limit_content_length, get_gradient_2d, get_gradient_3d
+from PIL import Image
+import numpy as np
+import json, hashlib, os, time, shutil, base64, random
+
+from config import *
 
 # makes sure this always runs from the folder its in, otherwise it breaks
 abspath = os.path.abspath(__file__)
@@ -12,24 +16,6 @@ dname = os.path.dirname(abspath)
 os.chdir(dname)
 
 app = Flask(__name__)
-
-# TODO: put this in a config file
-CONF_SITE_NAME = "Blogging Framework"
-CONF_MAX_CATEGORIES_PER_POST = 10
-CONF_MAX_CATEGORY_NAME_LENGTH = 20
-CONF_MAX_TITLE_LENGTH = 50
-CONF_MAX_IMPORTANCE_NAME_LENGTH = 15
-CONF_MAX_DESCRIPTION_LENGTH = 200
-CONF_STAY_LOGGED_IN_DURATION = 60 # 1 minute - resets on refresh
-CONF_TOTAL_STAY_LOGGED_IN_DURATION = 120 # 10 minutes - if the user has been logged in for longer than this amount of time, they will be logged out no matter what
-CONF_ENABLE_LOGIN_KEEPALIVE = True # login keepalive allows the max total stay logged in duration to be extended by 120 seconds every 110 seconds. this happens automatically on the post editor page to ensure a logout does not occur while a post is being edited before it can be saved
-CONF_DEBUG_ENABLE = False
-CONF_HOST = "127.0.0.1"
-CONF_USE_SOCKET = False
-CONF_UNIX_SOCKET = "./socket.sock"
-CONF_UNIX_SOCKET_PERMS = "777"
-CONF_PORT = 8080
-CONF_URL_PREFIX = ""
 
 
 with open("db.json", "r") as dbfile:
@@ -94,11 +80,11 @@ def viewpost_plaintext(postname):
 # | $$  | $$| $$$$$$$/| $$ \/  | $$ /$$$$$$| $$ \  $$
 # |__/  |__/|_______/ |__/     |__/|______/|__/  \__/
 # 
-# MAIN PAGES
+# MAIN ADMIN PAGES - all on one app.route to have them all controlled by the same login system - this reduces boilerplate and makes it faster to patch any possible security related issues
 #
 @app.route("/admin/<page>/<argument>", methods=["GET", "POST"])
 @app.route("/admin/<page>", methods=["GET", "POST"])
-@app.route("/admin", methods=["GET"])
+@app.route("/admin", methods=["GET", "POST"])
 @limit_content_length(512 * 1024 * 1024) # 512mb size limit per request for uploads to the admin page
 def admin(page=None, argument=None):
     # nothing should be before this if statement, this controls the login <-- ***IMPORTANT***
@@ -126,7 +112,29 @@ def admin(page=None, argument=None):
 # DASHBOARD
 #
     if page == None: # if no page is supplied, return the admin dashboard
-        return render_template("admin.html", username=username)
+        if request.method == "GET":
+            return render_template("admin.html", username=username, posts=os.listdir("blogs/"), get_post_info=get_post_info)
+        elif request.method == "POST": # if the method is post, the user has done something
+            action = request.form["action"]
+            if action == "delete":
+                postname = request.form["postname"]
+                if postname == db["featured"]:
+                    return "Featured posts cannot be deleted, please feature a different post before deleting"
+                if postname in os.listdir("blogs/"): # if its in the blogs dir, its safe because it already exists
+                    shutil.rmtree(f"blogs/{postname}")
+                    for category in db["categories"]: # remove the post from its category in the DB
+                        try: db["categories"][category].pop(db["categories"][category].index(postname))
+                        except ValueError: pass
+                    for urgency in db["urgencies"]: # remove the post from its category in the DB
+                        try: db["urgencies"][urgency].pop(db["urgencies"][urgency].index(postname))
+                        except ValueError: pass
+                    with open("db.json", "w") as dbfile:
+                        dbfile.write(json.dumps(db))
+                    return redirect(url_for('admin'))
+                else:
+                    abort(422)
+            else:
+                abort(422)
 #
 # NEW POST OR EDIT POST
 #
@@ -141,7 +149,7 @@ def admin(page=None, argument=None):
             # POST EDITOR (new mode)
             #
             if page == "new":
-                return render_template("post_editor.html", mode="new", urgencies=db["urgencies"])
+                return render_template("post_editor.html", mode="new", urgencies=db["urgencies"], all_categories=db["categories"])
             #
             # POST EDITOR (edit mode)
             #
@@ -160,7 +168,6 @@ def admin(page=None, argument=None):
                 while f"{name_prefix}-{count}" in usednames: count += 1 # makes a unique filename by counting up along the numbers after the date - which is set to server time.
                 name = f"{name_prefix}-{count}"
                 os.makedirs(f"blogs/{name}")
-                db["allposts"].append(name)
                 author = username
                 editors = []
 
@@ -171,35 +178,55 @@ def admin(page=None, argument=None):
                     author = postinfo["author"]
                     editors = postinfo["editors"]
                     if username not in editors + [author]: editors.append(username)
+                    for category in db["categories"]: # remove the post from its category in the DB
+                        try: db["categories"][category].pop(db["categories"][category].index(name))
+                        except ValueError: pass
+                    for urgency in db["urgencies"]: # remove the post from its category in the DB
+                        try: db["urgencies"][urgency].pop(db["urgencies"][urgency].index(name))
+                        except ValueError: pass
+
+
                 else: abort(418) # this sort of post request will only ever be sent if hackers be hacking - return teapot
             
             try: # encase everything that could have an effect on other pieces of data in a try so if it fails we can undo everything with minimal to no manual repair
-                featured = False # default
-                if "featured" in request.form: # featured is a checkbox, if it exists it's checked
-                    db["featured"] = name
-                    featured = True
+                if not(request.form["importance"]) or not(request.form["title"]) or not(request.form["description"]):
+                    abort(422)
+
+                importance = request.form["importance"][:CONF_MAX_IMPORTANCE_NAME_LENGTH]
 
                 count = 0
                 categories = []
+                categories_temp = []
                 while True: # since we have the ability to put one post in many categories, we need to iterate over all form elements with the prefix category- and get their values, if we hit the except we know we've reached the end of the categories
                     try:
                         category = request.form[f"category-{count}"][:CONF_MAX_CATEGORY_NAME_LENGTH]
-                        if category not in db["categories"]: # if the user makes a new category, add it to the list of categories
-                            db["categories"].append(category)
+                        try:
+                            if not name in db["categories"][category]: # if user puts the same category twice, dissallow that
+                                db["categories"][category].append(name)
+                        except KeyError: # sometimes the category doesnt exist, in that case we can make that category and assume the post isnt already in it (i spent 2 hours debugging this problem)
+                            db["categories"][category] = []
+                            db["categories"][category].append(name)
+
                         categories.append(category)
                         count += 1
                         if count > CONF_MAX_CATEGORIES_PER_POST: # ill add a rule on the frontend for this as well, but you can never trust user input
                             break
-                    except:
-                        if count == 0:
-                            abort(400)
-                        break
-            
-                title = request.form["title"][:CONF_MAX_TITLE_LENGTH]
+                    except KeyError:
+                        if count == 0: abort(422)
+                        else: break
 
-                importance = request.form["importance"][:CONF_MAX_IMPORTANCE_NAME_LENGTH]
-                if not importance in db["urgencies"]:
-                    db["urgencies"][importance].append(name) # TODO: make importance levels indexed from high to low so user can sort by importance
+                for cat in categories_temp:
+                    db["categories"][cat].append(name)
+                
+                featured = False # default
+                if "featured" in request.form: # featured is a checkbox, if it exists it's checked
+                    db["featured"] = name
+                    featured = True
+                title = request.form["title"][:CONF_MAX_TITLE_LENGTH]
+                
+                if importance not in db["urgencies"]: # make the list so we can append to it
+                    db["urgencies"][importance] = []
+                db["urgencies"][importance].append(name) # TODO: make importance levels indexed from high to low so user can sort by importance
 
                 description = request.form["description"][:CONF_MAX_DESCRIPTION_LENGTH]
 
@@ -222,13 +249,44 @@ def admin(page=None, argument=None):
                 # in case we are modifying any of these files, clear them from the cache. this just skips if the files arent in the cache so this is perfectly safe to just do every time
                 read_cached.clear_entry(f"blogs/{name}/db.json")
                 read_cached.clear_entry(f"blogs/{name}/page.md")
+
+                if not os.path.exists(f"blogs/{name}/images"):
+                    os.makedirs(f"blogs/{name}/images")
+
+                # below code handles images
+                banner = request.files["banner"]
+                thumbnail = request.files["thumbnail"]
+                favicon = request.files["favicon"]
+                og = request.files["og"]
+                
+                bannerimg = False #set this for later
+                if banner:
+                    bannerimg = Image.open(banner.stream)
+                    width, height = bannerimg.size
+                    if width / height > 1920 / 640:
+                        bannerimg = bannerimg.crop((0,\
+                                (width-(width*(640/1920)))/2,\
+                                width,\
+                                ((width-(width*(640/1920)))/2) + (width*(640/1920))))
+                    if width / height < 1920 / 640:
+                        bannerimg = bannerimg.crop(((width-(height*(1920/640)))/2,\
+                                0,\
+                                ((width-(height*(1920/640)))/2) + (height*(1920/640)),\
+                                height))
+                    bannerimg = bannerimg.resize((1920, 640))
+                elif not os.path.exists(f"blogs/{name}/images/banner.png"):
+                    array = get_gradient_3d(1920, 640, (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)), (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)), (random.choice([True, False]), random.choice([True, False]), random.choice([True, False])))
+                    bannerimg = Image.fromarray(np.uint8(array))
+                if bannerimg:
+                    bannerimg.save(f"blogs/{name}/images/banner.png")
+
                 
                 # TODO: make a cool page that shows confetti or something idk
                 return "Post made sucessfully!"
 
-            except SyntaxError: # deletes the post folder if something goes wrong, because an incomplete post folder causes errors
+            except: # deletes the post folder if something goes wrong, because an incomplete post folder causes errors
                 # the or is a failsafe because im paranoid that if name isnt made for some reason itll delete the entire directory
-                shutil.rmtree(f"blogs/{name or 'SOMETHING HAS GONE TERRIBLY WRONG'}") 
+                if page != "edit": shutil.rmtree(f"blogs/{name or 'SOMETHING HAS GONE TERRIBLY WRONG'}") 
                 abort(500)
 #
 # ADMIN LOGIN

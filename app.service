@@ -1,0 +1,14 @@
+# /etc/systemd/system/blogging_framework.service
+[Unit]
+Description=Blogging Framework
+After=network.target
+
+[Service]
+Type=simple
+User= # blah
+WorkingDirectory= # set to directory of program
+ExecStart=/path/to/program/main.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

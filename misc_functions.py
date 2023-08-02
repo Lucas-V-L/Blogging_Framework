@@ -77,6 +77,8 @@ def limit_content_length(max_length):
         return wrapper
     return decorator
 
+# the 2 gradient functions are from https://www.cocyer.com/python-pillow-generate-gradient-image-with-numpy/
+# i have 0 clue how they work, but they are absolutely amazing
 def get_gradient_2d(start, stop, width, height, is_horizontal):
     import numpy as np
     if is_horizontal:
@@ -91,3 +93,92 @@ def get_gradient_3d(width, height, start_list, stop_list, is_horizontal_list):
         result[:, :, i] = get_gradient_2d(start, stop, width, height, is_horizontal)
     return result
 
+def random_gradient(width, height):
+    """Generates a random gradient at the specified resolution"""
+    import numpy as np
+    from PIL import Image
+    array = get_gradient_3d(width, height,\
+            (random.randint(0, 255),\
+            random.randint(0, 255),\
+            random.randint(0, 255)),\
+            (random.randint(0, 255),\
+            random.randint(0, 255),\
+            random.randint(0, 255)),\
+            (random.choice([True, False]),
+                random.choice([True, False]),\
+                random.choice([True, False])))
+    return Image.fromarray(np.uint8(array))
+
+def crop_scale_image(inputimg, width, height):
+    """Basically crops and scales a supplied image and does what background size cover does in css"""
+    from PIL import Image
+    img = Image.open(inputimg)
+    imgwidth, imgheight = img.size
+    if imgwidth / imgheight < width / height:
+        img = img.crop((0,\
+            (imgwidth-(imgwidth*(height/width)))/2,\
+            imgwidth,\
+            ((imgwidth-(imgwidth*(height/width)))/2) + (imgwidth*(height/width))))
+    elif imgwidth / imgheight > width / height:
+        img = img.crop(((imgwidth-(imgheight*(width/height)))/2,\
+                0,\
+                ((imgwidth-(imgheight*(width/height)))/2) + (imgheight*(width/height)),\
+                imgheight))
+    img = img.resize((width, height))
+    return img
+
+def break_text(txt, font, max_width):
+    """i would explain this but frankly i have no clue how it really works and im afraid to touch it. i spent 4 hours fixing just 1 tiny bug. if you need to edit this function for any reason you're better off just ditching the whole system that relies on it and giving up. this code is literal hell, god help me when all the deprecated shit i used gets removed"""
+    txt = txt.split()
+    subset = 1
+    letter_size = None
+
+    text_size = len(txt)
+    while len(txt) > 0:
+        debug = False
+        
+        while True:
+            if debug:
+                print(txt)
+                import time
+                time.sleep(1)
+            txttmp = ""
+            for index, i in enumerate(txt):
+                txttmp += " " + i
+                if debug: 
+                    print(f'"{txttmp}"')
+                    print(f"index: {index} subset: {subset}")
+                if index >= subset: break
+            if debug: print(f"index: {index} subset: {subset}")
+            txttmp = txttmp.strip()
+            width = font.getlength(txttmp)
+
+            if width < max_width and len(txt) > 1 and len(txt) > subset:
+                subset += 1
+            elif width > max_width and subset != 1:
+                subset -= 1
+                txttmp = ""
+                for index, i in enumerate(txt):
+                    txttmp += " " + i
+                    if index == subset: break
+                txttmp = txttmp.strip()
+                break
+            elif width == max_width:
+                break
+            elif subset == 1 or subset == len(txt): 
+                if not(width > max_width): break
+                temp = ""
+                for index, i in enumerate(txttmp):
+                    if i == " ": break
+                    temp += i
+                    width = font.getlength(temp)
+                    if width >= max_width:
+                        txt = [txttmp[:index], txttmp[index:txttmp.find(" ")]] + txt[subset:]
+                        break
+                subset = 0
+                txttmp = txt[0]
+                break
+
+        yield txttmp
+        txt = txt[subset+1:]
+        subset = 1

@@ -3,8 +3,8 @@
 # use http://www.patorjk.com/software/taag to make labels
 
 from flask import Flask, render_template, abort, send_from_directory, session, redirect, request, flash, make_response, url_for
-from misc_functions import read_cached, get_post_content, get_post_info, limit_content_length, get_gradient_2d, get_gradient_3d
-from PIL import Image
+from misc_functions import read_cached, get_post_content, get_post_info, limit_content_length, get_gradient_2d, get_gradient_3d, random_gradient, crop_scale_image, break_text
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 import numpy as np
 import json, hashlib, os, time, shutil, base64, random
 
@@ -261,25 +261,40 @@ def admin(page=None, argument=None):
                 
                 bannerimg = False #set this for later
                 if banner:
-                    bannerimg = Image.open(banner.stream)
-                    width, height = bannerimg.size
-                    if width / height > 1920 / 640:
-                        bannerimg = bannerimg.crop((0,\
-                                (width-(width*(640/1920)))/2,\
-                                width,\
-                                ((width-(width*(640/1920)))/2) + (width*(640/1920))))
-                    if width / height < 1920 / 640:
-                        bannerimg = bannerimg.crop(((width-(height*(1920/640)))/2,\
-                                0,\
-                                ((width-(height*(1920/640)))/2) + (height*(1920/640)),\
-                                height))
-                    bannerimg = bannerimg.resize((1920, 640))
+                    bannerimg = crop_scale_image(banner.stream, 1920, 640)
                 elif not os.path.exists(f"blogs/{name}/images/banner.png"):
-                    array = get_gradient_3d(1920, 640, (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)), (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)), (random.choice([True, False]), random.choice([True, False]), random.choice([True, False])))
-                    bannerimg = Image.fromarray(np.uint8(array))
+                    bannerimg = random_gradient(1920, 640)
                 if bannerimg:
                     bannerimg.save(f"blogs/{name}/images/banner.png")
 
+                ogimg = False
+                if og:
+                    ogimg = crop_scale_image(og.stream, 1200, 630)
+                elif page == "edit": # if we are editing, regenerate the og-image
+                    if not banner:
+                        banner_temp = f"blogs/{name}/images/banner.png"
+                    else:
+                        banner.seek(0)
+                        banner_temp = banner.stream
+                    ogimg = crop_scale_image(banner_temp, 1200, 630)
+                    ogimg = ImageEnhance.Brightness(ogimg).enhance(0.3)
+                    draw = ImageDraw.Draw(ogimg)
+                    font = ImageFont.truetype(CONF_OG_IMG_FONT, CONF_OG_IMG_FONT_SIZE)
+                    text_broken = list(break_text(title, font, 1200))
+                    for i, line in enumerate(text_broken):
+                        _, _, w, h = font.getbbox(line)
+                        draw.text(((1200-w)/2, (((630-h)/2)+(((h)*i)-((h)*0.5*(len(text_broken)-1))))), line, font=font, fill="white")
+                if ogimg:
+                    ogimg.save(f"blogs/{name}/images/og.png")
+
+                thumbnailimg = False
+                if thumbnail:
+                    thumbnailimg = crop_scale_image(thumbnail.stream, 512, 512)
+                elif not os.path.exists(f"blogs/{name}/images/thumbnail.png"):
+                    thumbnailimg = crop_scale_image("default_images/thumbnail.png", 512, 512)
+                if thumbnailimg:
+                    thumbnailimg.save(f"blogs/{name}/images/thumbnail.png")
+                    
                 
                 # TODO: make a cool page that shows confetti or something idk
                 return "Post made sucessfully!"
@@ -303,7 +318,7 @@ def login():
             uname = request.form["username"]
             if hashedinputpass == users[uname]: # yay! login successful, set a cookie and continue to the admin dashboard
                 while True:
-                    random_id = base64.b64encode(os.urandom(256))
+                    random_id = base64.b64encode(os.urandom(256)) + bytes(uname, encoding="utf-8")
                     if random_id not in logged_in_db and random_id not in past_used_keys: # overlap is extremely unlikely, but nonetheless possible
                         break
                 logged_in_db[random_id] = {"uname": uname, "last_access": time.time(), "initial_access": time.time(), "last_keepalive": time.time()}
@@ -325,7 +340,7 @@ def logout():
 
 
 if __name__ == "__main__":
-    app.secret_key = os.urandom(256) # overlap on user id _and_ key will only happen one every 13407807929942597099574024998205846127479365820592393377723561443721764030073546976801874298166903427690031858186486050853753882811946569946433649006084096 times (yes, i did the math). im willing to take those chances
+    app.secret_key = os.urandom(256) # overlap on user id _and_ key will only happen one every 13407807929942597099574024998205846127479365820592393377723561443721764030073546976801874298166903427690031858186486050853753882811946569946433649006084096 times (yes, i did the math, and thats that many server restarts _and_ logins not just logins btw) given the condition that the server is restarted, happens to pick the same random secret key, and at the same time happens to reuse a userid. to be safe, i append the username to the end of every user ID, that way any overlap that may possibly happen, will only happen on the same user as is logging in. TLDR the only account that could possibly be accidentally logged in to is your own
     if CONF_DEBUG_ENABLE:
         from werkzeug.middleware.profiler import ProfilerMiddleware
         app.wsgi_app = ProfilerMiddleware(app.wsgi_app, restrictions=[20], profile_dir='./profile')

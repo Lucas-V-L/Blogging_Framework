@@ -353,14 +353,16 @@ def login():
 
     if request.method == "POST":
         try:
-            hashedinputpass = hashlib.sha512(request.form["password"].encode("utf-8")).hexdigest()
             uname = request.form["username"]
-            if hashedinputpass == users[uname]: # yay! login successful, set a cookie and continue to the admin dashboard
+            salt = users[uname]["salt"]
+            hashedinputpass = hashlib.sha512(f"{request.form['password']}{salt}".encode("utf-8")).hexdigest()
+            if hashedinputpass == users[uname]["passhash"]: # yay! login successful, set a cookie and continue to the admin dashboard
                 while True:
                     random_id = base64.b64encode(os.urandom(256)) + bytes(uname, encoding="utf-8")
-                    if random_id not in logged_in_db and random_id not in past_used_keys: # overlap is extremely unlikely, but nonetheless possible
+                    if random_id not in logged_in_db and random_id not in past_used_keys: # overlap is extremely unlikely, but nonetheless possible, make sure it doesnt happen here
                         break
-                logged_in_db[random_id] = {"uname": uname, "last_access": time.time(), "initial_access": time.time(), "last_keepalive": time.time()}
+                role = users[uname]["role"]
+                logged_in_db[random_id] = {"uname": uname, "last_access": time.time(), "initial_access": time.time(), "last_keepalive": time.time(), "role":role}
                 session['key'] = random_id
                 return redirect("/admin", code=302)
             else:

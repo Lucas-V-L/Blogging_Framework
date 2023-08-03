@@ -3,8 +3,8 @@
 # use http://www.patorjk.com/software/taag to make labels
 
 from flask import Flask, render_template, abort, send_from_directory, session, redirect, request, flash, make_response, url_for
-from misc_functions import read_cached, get_post_content, get_post_info, limit_content_length, get_gradient_2d, get_gradient_3d, random_gradient, crop_scale_image, break_text
-from PIL import Image, ImageDraw, ImageFont, ImageEnhance
+from misc_functions import read_cached, get_post_content, get_post_info, limit_content_length, get_gradient_2d, get_gradient_3d, random_gradient, crop_scale_image, break_text, random_word
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
 import numpy as np
 import json, hashlib, os, time, shutil, base64, random
 
@@ -14,6 +14,8 @@ from config import *
 abspath = os.path.abspath(__file__)
 dname = os.path.dirname(abspath)
 os.chdir(dname)
+
+PIL_SUPPORTED_FILETYPES = supported_extensions = {ex for ex, f in Image.registered_extensions().items() if f in Image.OPEN}
 
 app = Flask(__name__)
 
@@ -60,6 +62,12 @@ def viewpost(postname):
 @app.route("/posts/<postname>/images/<imgname>", methods=["GET"])
 def serve_image(postname, imgname):
     return send_from_directory("blogs", f"{postname}/images/{imgname}")
+#
+# OTHER FILE HANDLER
+#
+@app.route("/fileuploads/<container>/<filename>")
+def serve_file(container, filename):
+        return send_from_directory("fileuploads", f"{container}/{filename}")
 #
 # PLAINTEXT VIEWER
 #
@@ -136,6 +144,33 @@ def admin(page=None, argument=None):
             else:
                 abort(422)
 #
+# Image Upload Page
+#
+    elif page == "fileupload":
+        if request.method == "GET":
+            return render_template("fileupload.html", filelinks = []) # dont worry, jijja2 automatically sanitises the stuff in imglinks
+        elif request.method == "POST":
+            file = request.files["file"]
+            if file == '':
+                abort(400)
+            fileext = os.path.splitext(file.filename)[1]
+            if fileext.lower() not in CONF_ALLOWED_FILETYPES:
+                abort(400)
+            filelinks = json.loads(request.form["filelinks"]) if request.form["filelinks"] else {}
+            used_names = os.listdir("fileuploads")
+            while True:
+                rand_name = random_word(25)
+                if rand_name not in used_names: break
+            os.makedirs(f"fileuploads/{rand_name}")
+            file.save(f"fileuploads/{rand_name}/file{fileext}")
+            with open(f"fileuploads/{rand_name}/name.txt", "w") as name: name.write(file.filename)
+            if fileext.lower() in PIL_SUPPORTED_FILETYPES:
+                thumbnail = Image.open(f"fileuploads/{rand_name}/file{fileext}")
+                thumbnail.thumbnail((256, 256))
+                thumbnail.save(f"fileuploads/{rand_name}/thumbnail.png")
+            filelinks[f"{rand_name}/file{fileext}"] = {"filename":file.filename, "thumbnail":f"{rand_name}/thumbnail.png"}
+            return render_template("fileupload.html", filelinks = filelinks, linksjson=json.dumps(filelinks))
+#
 # NEW POST OR EDIT POST
 #
     elif page in ["new", "edit"]:
@@ -181,7 +216,7 @@ def admin(page=None, argument=None):
                     for category in db["categories"]: # remove the post from its category in the DB
                         try: db["categories"][category].pop(db["categories"][category].index(name))
                         except ValueError: pass
-                    for urgency in db["urgencies"]: # remove the post from its category in the DB
+                    for urgency in db["urgencies"]: # remove the post from its urgency in the DB
                         try: db["urgencies"][urgency].pop(db["urgencies"][urgency].index(name))
                         except ValueError: pass
 
@@ -270,14 +305,18 @@ def admin(page=None, argument=None):
                 ogimg = False
                 if og:
                     ogimg = crop_scale_image(og.stream, 1200, 630)
-                elif page == "edit": # if we are editing, regenerate the og-image
-                    if not banner:
-                        banner_temp = f"blogs/{name}/images/banner.png"
-                    else:
+                else:
+                    if banner:
                         banner.seek(0)
-                        banner_temp = banner.stream
-                    ogimg = crop_scale_image(banner_temp, 1200, 630)
+                        og_temp = banner.stream
+                    elif os.path.exists(f"blogs/{name}/images/og-noedits.png"):
+                        og_temp = f"blogs/{name}/images/og-noedits.png"
+                    else: # this should only happen with the gradient banners
+                        og_temp = f"blogs/{name}/images/banner.png"
+                    ogimg = crop_scale_image(og_temp, 1200, 630)
+                    ogimg.save(f"blogs/{name}/images/og-noedits.png")
                     ogimg = ImageEnhance.Brightness(ogimg).enhance(0.3)
+                    ogimg = ogimg.filter(ImageFilter.GaussianBlur(radius=5))
                     draw = ImageDraw.Draw(ogimg)
                     font = ImageFont.truetype(CONF_OG_IMG_FONT, CONF_OG_IMG_FONT_SIZE)
                     text_broken = list(break_text(title, font, 1200))
@@ -299,7 +338,7 @@ def admin(page=None, argument=None):
                 # TODO: make a cool page that shows confetti or something idk
                 return "Post made sucessfully!"
 
-            except: # deletes the post folder if something goes wrong, because an incomplete post folder causes errors
+            except SyntaxError: # deletes the post folder if something goes wrong, because an incomplete post folder causes errors
                 # the or is a failsafe because im paranoid that if name isnt made for some reason itll delete the entire directory
                 if page != "edit": shutil.rmtree(f"blogs/{name or 'SOMETHING HAS GONE TERRIBLY WRONG'}") 
                 abort(500)

@@ -97,6 +97,7 @@ def random_gradient(width, height):
     """Generates a random gradient at the specified resolution"""
     import numpy as np
     from PIL import Image
+    import random
     array = get_gradient_3d(width, height,\
             (random.randint(0, 255),\
             random.randint(0, 255),\
@@ -116,9 +117,9 @@ def crop_scale_image(inputimg, width, height):
     imgwidth, imgheight = img.size
     if imgwidth / imgheight < width / height:
         img = img.crop((0,\
-            (imgwidth-(imgwidth*(height/width)))/2,\
+            (imgheight-(imgwidth*(height/width)))/2,\
             imgwidth,\
-            ((imgwidth-(imgwidth*(height/width)))/2) + (imgwidth*(height/width))))
+            ((imgheight-(imgwidth*(height/width)))/2) + (imgwidth*(height/width))))
     elif imgwidth / imgheight > width / height:
         img = img.crop(((imgwidth-(imgheight*(width/height)))/2,\
                 0,\
@@ -182,3 +183,8 @@ def break_text(txt, font, max_width):
         yield txttmp
         txt = txt[subset+1:]
         subset = 1
+
+def random_word(length):
+    import random, string
+    letters = string.ascii_letters + string.digits + "-."
+    return ''.join(random.choice(letters) for i in range(length))

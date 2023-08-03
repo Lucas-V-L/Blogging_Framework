@@ -13,6 +13,10 @@
 
 </head>
 <body>
+{% if logged_in %}
+	<p>User: {{uname}}</p>
+	<p>Role: {{role}}</p>
+{% endif %}
 <div class="wrap-all">
 	
 	<a href="posts/{{featured}}">

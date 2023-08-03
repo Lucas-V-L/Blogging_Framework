@@ -31,11 +31,25 @@ past_used_keys = []
 
 @app.route("/", methods=["GET"])
 def homepage():
+    user_id = session.get("key")
+    logged_in = False
+    uname = None
+    role = None
+    if user_id in logged_in_db:
+        if time.time() - logged_in_db[user_id]["last_access"] <= CONF_STAY_LOGGED_IN_DURATION or \
+            time.time() - logged_in_db[user_id]["initial_access"] <= CONF_TOTAL_STAY_LOGGED_IN_DURATION:
+            logged_in = True
+            uname = logged_in_db[user_id]["uname"]
+            role = logged_in_db[user_id]["role"]
+            logged_in_db[user_id]["last_access"] = time.time()
     return render_template("index.html", \
             site_name = CONF_SITE_NAME,\
             categories = db["categories"],\
             featured = db["featured"],\
             allposts = os.listdir("blogs/"),\
+            logged_in = logged_in,\
+            uname = uname,\
+            role = role,\
             get_post_info = get_post_info)
 
 #
@@ -54,8 +68,24 @@ def homepage():
 def viewpost(postname):
     content = get_post_content(postname)
     info = get_post_info(postname)
- 
-    return render_template("page.html", content=content, title=info["title"], site_name=CONF_SITE_NAME)
+    user_id = session.get("key")
+    logged_in = False
+    uname = None
+    role = None
+    if user_id in logged_in_db:
+        if time.time() - logged_in_db[user_id]["last_access"] <= CONF_STAY_LOGGED_IN_DURATION or \
+            time.time() - logged_in_db[user_id]["initial_access"] <= CONF_TOTAL_STAY_LOGGED_IN_DURATION:
+            logged_in = True
+            uname = logged_in_db[user_id]["uname"]
+            role = logged_in_db[user_id]["role"] 
+            logged_in_db[user_id]["last_access"] = time.time()
+    return render_template("page.html",\
+            content=content,\
+            title=info["title"],\
+            site_name=CONF_SITE_NAME,\
+            logged_in=logged_in,\
+            uname=uname,\
+            role=role)
 #
 # IMAGE HANDLER
 #
@@ -99,11 +129,13 @@ def admin(page=None, argument=None):
     # IF ANYTHING EVER RETURNS BEFORE THIS CHECK, IT WILL BYPASS LOGIN AND DESTROY ALL SECURITY!!!!!!!!!!!!!!!!!!!!!!!
     user_id = session.get("key")
     if not user_id in logged_in_db: # this redirects to the login page if the cookie does not exist or is tampered with
-        return redirect("/admin/login", code=302)
+        return redirect(url_for("login"), code=302)
     elif time.time() - logged_in_db[user_id]["last_access"] > CONF_STAY_LOGGED_IN_DURATION or \
             time.time() - logged_in_db[user_id]["initial_access"] > CONF_TOTAL_STAY_LOGGED_IN_DURATION:
         logged_in_db.pop(session.pop("key", None))
-        return redirect("/admin/login", code=302) # signs user out and redirects to login if login is expired
+        return redirect(url_for("login"), code=302) # signs user out and redirects to login if login is expired
+    elif logged_in_db[user_id]["role"] != "admin":
+        abort(403)
     else: 
         logged_in_db[user_id]["last_access"] = time.time()
         username = logged_in_db[user_id]["uname"]
@@ -343,9 +375,9 @@ def admin(page=None, argument=None):
                 if page != "edit": shutil.rmtree(f"blogs/{name or 'SOMETHING HAS GONE TERRIBLY WRONG'}") 
                 abort(500)
 #
-# ADMIN LOGIN
+# LOGIN
 #
-@app.route("/admin/login", methods=["GET", "POST"])
+@app.route("/login", methods=["GET", "POST"])
 @limit_content_length(3 * 1024 * 1024) # if your username and password are larger than 3MB youre probably a bit too paranoid... this keeps people from uploading a terabyte of password and making the cpu try and hash all of that
 def login():
     if request.method == "GET":
@@ -364,16 +396,17 @@ def login():
                 role = users[uname]["role"]
                 logged_in_db[random_id] = {"uname": uname, "last_access": time.time(), "initial_access": time.time(), "last_keepalive": time.time(), "role":role}
                 session['key'] = random_id
-                return redirect("/admin", code=302)
+                if role == "admin": return redirect(url_for("admin"), code=302)
+                else: return redirect(url_for("homepage"), code=302)
             else:
                 flash("Password incorrect!")
                 return render_template("login.html", wrongpass=True)
         except KeyError: # if the username isnt in the dict, do this
             return render_template("login.html", wrongname=True)
 #
-# ADMIN LOGOUT
+# LOGOUT
 #
-@app.route("/admin/logout", methods=["GET"])
+@app.route("/logout", methods=["GET"])
 def logout():
     logged_in_db.pop(session.pop("key", None)) # pop returns the user id, which gets popped from the DB
     return "Logged out!"
@@ -381,7 +414,7 @@ def logout():
 
 
 if __name__ == "__main__":
-    app.secret_key = os.urandom(256) # overlap on user id _and_ key will only happen one every 13407807929942597099574024998205846127479365820592393377723561443721764030073546976801874298166903427690031858186486050853753882811946569946433649006084096 times (yes, i did the math, and thats that many server restarts _and_ logins not just logins btw) given the condition that the server is restarted, happens to pick the same random secret key, and at the same time happens to reuse a userid. to be safe, i append the username to the end of every user ID, that way any overlap that may possibly happen, will only happen on the same user as is logging in. TLDR the only account that could possibly be accidentally logged in to is your own
+    app.secret_key = os.urandom(256) # overlap on user id _and_ key will only happen one every 13407807929942597099574024998205846127479365820592393377723561443721764030073546976801874298166903427690031858186486050853753882811946569946433649006084096 times (yes, i did the math, and thats that many server restarts _and_ logins not just logins btw) given the condition that the server is restarted, happens to pick the same random secret key, and at the same time happens to reuse a userid. to be safe, i append the username to the end of every user ID, that way any overlap that may possibly happen, will only happen on the same user as is logging in. TLDR the only account that could even possibly be overlap-logged-in to is your own
     if CONF_DEBUG_ENABLE:
         from werkzeug.middleware.profiler import ProfilerMiddleware
         app.wsgi_app = ProfilerMiddleware(app.wsgi_app, restrictions=[20], profile_dir='./profile')

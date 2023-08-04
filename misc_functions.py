@@ -201,11 +201,11 @@ def make_captcha(secret_key):
         used_captchas = []
     
     while True:
-        captcha_text = random_word(10).lower() # i would include uppercase chars, but that makes audio captchas much harder and i want this to be accessible
+        captcha_text = random_word(7).lower() # i would include uppercase chars, but that makes audio captchas much harder and i want this to be accessible
         salt = secrets.token_hex(15)
         captcha_hash = hashlib.sha256(f"{captcha_text}{salt}{secret_key}".encode("utf-8")).hexdigest() # the secret key is to prevent people from making their own combination of text and salt, this adds another factor which cannot be tampered with
         if captcha_hash not in used_captchas: break
-    image = ImageCaptcha()
+    image = ImageCaptcha(fonts=["fonts/iosevka-extended-medium.ttf"])
     imagedata: io.BytesIO = image.generate(captcha_text)
     b64image = f'<img src="data:image/png;base64,{base64.b64encode(imagedata.read()).decode(encoding="utf-8")}" alt="Captcha Image"/>'
     audio = AudioCaptcha("captcha_voices/en")

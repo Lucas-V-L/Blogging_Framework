@@ -185,6 +185,51 @@ def break_text(txt, font, max_width):
         subset = 1
 
 def random_word(length):
-    import random, string
-    letters = string.ascii_letters + string.digits + "-."
-    return ''.join(random.choice(letters) for i in range(length))
+    import secrets, string
+    letters = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(letters) for i in range(length))
+
+def make_captcha(secret_key):
+    """Returns HTML for a captcha. captcha.validate() validates a captcha"""
+    from captcha.image import ImageCaptcha
+    from captcha.audio import AudioCaptcha
+    import base64, secrets, io, hashlib, json
+    try:
+        with open("captcha_db.json", "r") as captcha_db:
+            used_captchas = json.loads(captcha.read())
+    except:
+        used_captchas = []
+    
+    while True:
+        captcha_text = random_word(10).lower() # i would include uppercase chars, but that makes audio captchas much harder and i want this to be accessible
+        salt = secrets.token_hex(15)
+        captcha_hash = hashlib.sha256(f"{captcha_text}{salt}{secret_key}".encode("utf-8")).hexdigest() # the secret key is to prevent people from making their own combination of text and salt, this adds another factor which cannot be tampered with
+        if captcha_hash not in used_captchas: break
+    image = ImageCaptcha()
+    imagedata: io.BytesIO = image.generate(captcha_text)
+    b64image = f'<img src="data:image/png;base64,{base64.b64encode(imagedata.read()).decode(encoding="utf-8")}" alt="Captcha Image"/>'
+    audio = AudioCaptcha("captcha_voices/en")
+    audiodata: bytearray = audio.generate(captcha_text)
+    b64audio = f'<audio controls src="data:audio/wav;base64,{base64.b64encode(audiodata).decode(encoding="utf-8")}"></audio>'
+    form = f'<input type="hidden" name="captcha_hash" value="{captcha_hash}">\
+            <input type="hidden" name="captcha_salt" value="{salt}">\
+            <label for="captcha_input">Captcha Text: </label><input type="text" name="captcha_input" id="captcha_input">'
+    return f"{b64image}<br>{b64audio}<br>{form}<br>"
+    
+def check_captcha(secret_key, salt, text, captcha_hash_old):
+    import hashlib, json
+    try:
+        with open("captcha_db.json", "r") as captcha_db:
+            used_captchas = json.loads(captcha_db.read())
+    except:
+        used_captchas = []
+    captcha_hash = hashlib.sha256(f"{text}{salt}{secret_key}".encode("utf-8")).hexdigest()
+    if captcha_hash in used_captchas:
+        return False
+    elif captcha_hash == captcha_hash_old:
+        used_captchas.append(captcha_hash)
+        with open("captcha_db.json", "w") as captcha_db:
+            captcha_db.write(json.dumps(used_captchas))
+        return True
+    else:
+        return False

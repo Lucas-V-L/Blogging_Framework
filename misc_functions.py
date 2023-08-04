@@ -193,7 +193,7 @@ def make_captcha(secret_key):
     """Returns HTML for a captcha. captcha.validate() validates a captcha"""
     from captcha.image import ImageCaptcha
     from captcha.audio import AudioCaptcha
-    import base64, secrets, io, hashlib, json
+    import base64, secrets, io, hashlib, json, hmac
     try:
         with open("captcha_db.json", "r") as captcha_db:
             used_captchas = json.loads(captcha.read())
@@ -202,8 +202,8 @@ def make_captcha(secret_key):
     
     while True:
         captcha_text = random_word(7).lower() # i would include uppercase chars, but that makes audio captchas much harder and i want this to be accessible
-        salt = secrets.token_hex(15)
-        captcha_hash = hashlib.sha512(f"{captcha_text}{salt}{secret_key}".encode("utf-8")).hexdigest() # the secret key is to prevent people from making their own combination of text and salt, this adds another factor which cannot be tampered with
+        salt = secrets.token_hex(15) 
+        captcha_hash = hmac.new(secret_key.encode("utf-8"), f"{captcha_text}{salt}".encode("utf-8"), hashlib.sha512).hexdigest()
         if captcha_hash not in used_captchas: break
     image = ImageCaptcha(fonts=["fonts/iosevka-extended-medium.ttf"])
     imagedata: io.BytesIO = image.generate(captcha_text)
@@ -217,13 +217,13 @@ def make_captcha(secret_key):
     return f"{b64image}<br>{b64audio}<br>{form}<br>"
     
 def check_captcha(secret_key, salt, text, captcha_hash_old):
-    import hashlib, json
+    import hashlib, json, hmac
     try:
         with open("captcha_db.json", "r") as captcha_db:
             used_captchas = json.loads(captcha_db.read())
     except:
         used_captchas = []
-    captcha_hash = hashlib.sha512(f"{text}{salt}{secret_key}".encode("utf-8")).hexdigest()
+    captcha_hash = hmac.new(secret_key.encode("utf-8"), f"{text}{salt}".encode("utf-8"), hashlib.sha512).hexdigest()
     if captcha_hash in used_captchas:
         return False
     elif captcha_hash == captcha_hash_old:

@@ -203,7 +203,7 @@ def make_captcha(secret_key):
     while True:
         captcha_text = random_word(7).lower() # i would include uppercase chars, but that makes audio captchas much harder and i want this to be accessible
         salt = secrets.token_hex(15)
-        captcha_hash = hashlib.sha256(f"{captcha_text}{salt}{secret_key}".encode("utf-8")).hexdigest() # the secret key is to prevent people from making their own combination of text and salt, this adds another factor which cannot be tampered with
+        captcha_hash = hashlib.sha512(f"{captcha_text}{salt}{secret_key}".encode("utf-8")).hexdigest() # the secret key is to prevent people from making their own combination of text and salt, this adds another factor which cannot be tampered with
         if captcha_hash not in used_captchas: break
     image = ImageCaptcha(fonts=["fonts/iosevka-extended-medium.ttf"])
     imagedata: io.BytesIO = image.generate(captcha_text)
@@ -223,7 +223,7 @@ def check_captcha(secret_key, salt, text, captcha_hash_old):
             used_captchas = json.loads(captcha_db.read())
     except:
         used_captchas = []
-    captcha_hash = hashlib.sha256(f"{text}{salt}{secret_key}".encode("utf-8")).hexdigest()
+    captcha_hash = hashlib.sha512(f"{text}{salt}{secret_key}".encode("utf-8")).hexdigest()
     if captcha_hash in used_captchas:
         return False
     elif captcha_hash == captcha_hash_old:

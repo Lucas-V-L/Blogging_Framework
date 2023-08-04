@@ -3,10 +3,10 @@
 # use http://www.patorjk.com/software/taag to make labels
 
 from flask import Flask, render_template, abort, send_from_directory, session, redirect, request, flash, make_response, url_for
-from misc_functions import read_cached, get_post_content, get_post_info, limit_content_length, get_gradient_2d, get_gradient_3d, random_gradient, crop_scale_image, break_text, random_word
+from misc_functions import read_cached, get_post_content, get_post_info, limit_content_length, get_gradient_2d, get_gradient_3d, random_gradient, crop_scale_image, break_text, random_word, make_captcha, check_captcha, get_post_comments
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
 import numpy as np
-import json, hashlib, os, time, shutil, base64, random
+import json, hashlib, os, time, shutil, base64, random, re
 
 from config import *
 
@@ -15,6 +15,7 @@ abspath = os.path.abspath(__file__)
 dname = os.path.dirname(abspath)
 os.chdir(dname)
 
+CAPTCHA_KEY = os.urandom(128) # must be object type bytes
 PIL_SUPPORTED_FILETYPES = supported_extensions = {ex for ex, f in Image.registered_extensions().items() if f in Image.OPEN}
 
 app = Flask(__name__)
@@ -62,10 +63,12 @@ def homepage():
 # | $$      |  $$$$$$/|  $$$$$$/   | $$            \  $/    /$$$$$$| $$$$$$$$| $$/   \  $$| $$$$$$$$| $$  | $$
 # |__/       \______/  \______/    |__/             \_/    |______/|________/|__/     \__/|________/|__/  |__/
 #
-# REGULAR POST VIEWER
+# REGULAR POST VIEWER + comments + voting
 #
-@app.route("/posts/<postname>", methods=["GET"])
+@app.route("/posts/<postname>", methods=["GET", "POST"])
 def viewpost(postname):
+    if not re.compile("^[0-9\-]*$").match(postname): # make sure postname is safe
+        abort(404)
     content = get_post_content(postname)
     info = get_post_info(postname)
     user_id = session.get("key")
@@ -79,13 +82,48 @@ def viewpost(postname):
             uname = logged_in_db[user_id]["uname"]
             role = logged_in_db[user_id]["role"] 
             logged_in_db[user_id]["last_access"] = time.time()
-    return render_template("page.html",\
-            content=content,\
-            title=info["title"],\
-            site_name=CONF_SITE_NAME,\
-            logged_in=logged_in,\
-            uname=uname,\
-            role=role)
+    if request.method == "GET":
+        if os.path.exists(f"blogs/{postname}/comments.json"):
+            comments = get_post_comments(postname)
+        else: comments = []
+        return render_template("page.html",\
+                content=content,\
+                title=info["title"],\
+                site_name=CONF_SITE_NAME,\
+                logged_in=logged_in,\
+                uname=uname,\
+                role=role,\
+                make_captcha=make_captcha,\
+                captcha_secret_key=CAPTCHA_KEY,# this will never be rendered, dont worry, just for the make captcha function\
+                comments=comments)
+    elif request.method == "POST":
+        if request.form["inputtype"] == "comment":
+            comment = request.form["comment_content"][:CONF_MAX_COMMENT_LENGTH]
+            if logged_in and role in ["user", "admin"]:
+                commentsfile = f"blogs/{postname}/comments.json"
+                if not os.path.exists(commentsfile): comments = []
+                else: 
+                    with open(commentsfile, "r") as f: comments = json.loads(f.read())
+                comments.append({"username":uname, "role":role, "posted":time.time(), "content":comment})
+                with open(commentsfile, "w") as f: f.write(json.dumps(comments))
+                read_cached.clear_entry(commentsfile)
+                return "Comment Posted!"
+            else:
+                captcha_hash = request.form["captcha_hash"]
+                captcha_salt = request.form["captcha_salt"]
+                captcha_input = request.form["captcha_input"]
+                if check_captcha(CAPTCHA_KEY, captcha_salt, captcha_input, captcha_hash):
+                    try: db["pending_comments"]
+                    except: db["pending_comments"] = {}
+                    try: db["pending_comments"][postname]
+                    except: db["pending_comments"][postname] = []
+                    db["pending_comments"][postname].append({"username":uname, "role":role, "posted":time.time(), "content":comment})
+                    with open("db.json", "w") as dbfile:
+                        dbfile.write(json.dumps(db))
+                    return "Your comment has been submitted for review and may be accepted by the admins"
+                else:
+                    abort(403) # TODO: make captcha failed page
+
 #
 # IMAGE HANDLER
 #

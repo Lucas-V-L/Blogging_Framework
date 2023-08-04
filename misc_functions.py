@@ -62,6 +62,15 @@ def get_post_info(postname):
     import json
     return json.loads(read_cached(f"blogs/{postname}/db.json"))
 
+def get_post_comments(postname):
+    import re
+    if not re.compile("^[0-9\-]*$").match(postname): # Makes sure the post name contains nothing it shouldnt
+        from flask import abort
+        abort(418)
+        return 1 # if abort for some reason fails at least thisll catch it
+    import json
+    return json.loads(read_cached(f"blogs/{postname}/comments.json"))
+
 
 def limit_content_length(max_length):
     """shamelessly copy/pasted from https://stackoverflow.com/questions/25036498/is-it-possible-to-limit-flask-post-data-size-on-a-per-route-basis - allows me to limit the max POST size on a per route basis. super useful for when im processing multiple data types and want to set different limits for say, a logged in user vs a non logged in user"""
@@ -203,7 +212,7 @@ def make_captcha(secret_key):
     while True:
         captcha_text = random_word(7).lower() # i would include uppercase chars, but that makes audio captchas much harder and i want this to be accessible
         salt = secrets.token_hex(15) 
-        captcha_hash = hmac.new(secret_key.encode("utf-8"), f"{captcha_text}{salt}".encode("utf-8"), hashlib.sha512).hexdigest()
+        captcha_hash = hmac.new(secret_key, f"{captcha_text}{salt}".encode("utf-8"), hashlib.sha512).hexdigest()
         if captcha_hash not in used_captchas: break
     image = ImageCaptcha(fonts=["fonts/iosevka-extended-medium.ttf"])
     imagedata: io.BytesIO = image.generate(captcha_text)
@@ -223,7 +232,7 @@ def check_captcha(secret_key, salt, text, captcha_hash_old):
             used_captchas = json.loads(captcha_db.read())
     except:
         used_captchas = []
-    captcha_hash = hmac.new(secret_key.encode("utf-8"), f"{text}{salt}".encode("utf-8"), hashlib.sha512).hexdigest()
+    captcha_hash = hmac.new(secret_key, f"{text}{salt}".encode("utf-8"), hashlib.sha512).hexdigest()
     if captcha_hash in used_captchas:
         return False
     elif captcha_hash == captcha_hash_old:

@@ -12,5 +12,19 @@
 		<p>Role: {{role}}</p>
 	{% endif %}
 	{{content|safe}}
+	<div class="comments">
+		<form method="POST">
+			<input type="hidden" name="inputtype" value="comment">
+			<textarea name="comment_content">A well thought out and insightful comment</textarea><br>
+			{% if not logged_in or not role in ["user", "admin"] %}
+				{{ make_captcha(captcha_secret_key)|safe }}
+			{% endif %}
+			<input type="submit">
+		</form>
+		{% for comment in comments %}
+			<h3>{{comment["username"] if comment["username"] != Null else "Anonymous"}}</h3>
+			<p>{{comment["content"]}}</p>
+		{% endfor %}
+	</div>
 </body>
 </html>

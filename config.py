@@ -6,6 +6,7 @@ CONF_MAX_CATEGORY_NAME_LENGTH = 20
 CONF_MAX_TITLE_LENGTH = 80
 CONF_MAX_IMPORTANCE_NAME_LENGTH = 15 # shouldnt be too long to prevent formatting issues
 CONF_MAX_DESCRIPTION_LENGTH = 200 # shouldnt be too long to prevent formatting issues
+CONF_MAX_COMMENT_LENGTH = 250 # max length for comments on posts to be
 CONF_STAY_LOGGED_IN_DURATION = 60 * 60 # 1 hour - resets on refresh
 CONF_TOTAL_STAY_LOGGED_IN_DURATION = 60 * 60 * 24 * 3 # 3 days - if the user has been logged in for longer than this amount of time, they will be logged out no matter what unless keepalive keeps the user logged in
 CONF_ENABLE_LOGIN_KEEPALIVE = True # login keepalive allows the max total stay logged in duration to be extended by 120 seconds every 110 seconds. this happens automatically on the post editor page to ensure a logout does not occur while a post is being edited before it can be saved

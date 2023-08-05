@@ -23,6 +23,16 @@
 		</form>
 		{% for comment in comments %}
 			<h3>{{comment["username"] if comment["username"] != Null else "Anonymous"}}</h3>
+			{% if comment["username"] == uname or role == "admin" %}
+			<form method="POST">
+				<input type="hidden" name="inputtype" value="deletecomment">
+				<input type="hidden" name="comment_content" value="{{comment['content']}}">
+				<input type="hidden" name="user_role" value="{{comment['role']}}">
+				<input type="hidden" name="posted_time" value="{{comment['posted']}}">
+				<input type="hidden" name="uname" value="{{comment['username']}}">
+				<input type="submit" onclick="return confirm('Are you sure you wish to delete this comment? This cannot be undone!')" value="Delete">
+			</form>
+			{% endif %}
 			<p>{{comment["content"]}}</p>
 		{% endfor %}
 	</div>

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# use http://www.patorjk.com/software/taag to make labels
+# use http://www.patorjk.com/software/taag to make labels ("Big Money-ne" set to "Smush (R)")
 
 from flask import Flask, render_template, abort, send_from_directory, session, redirect, request, flash, make_response, url_for
 from misc_functions import read_cached, get_post_content, get_post_info, limit_content_length, get_gradient_2d, get_gradient_3d, random_gradient, crop_scale_image, break_text, random_word, make_captcha, check_captcha, get_post_comments
@@ -30,6 +30,16 @@ with open("users.json", "r") as userdb:
 logged_in_db = {}
 past_used_keys = []
 
+#
+#  /$$        /$$$$$$  /$$   /$$ /$$$$$$$  /$$$$$$ /$$   /$$  /$$$$$$        /$$$$$$$   /$$$$$$   /$$$$$$  /$$$$$$$$
+# | $$       /$$__  $$| $$$ | $$| $$__  $$|_  $$_/| $$$ | $$ /$$__  $$      | $$__  $$ /$$__  $$ /$$__  $$| $$_____/
+# | $$      | $$  \ $$| $$$$| $$| $$  \ $$  | $$  | $$$$| $$| $$  \__/      | $$  \ $$| $$  \ $$| $$  \__/| $$      
+# | $$      | $$$$$$$$| $$ $$ $$| $$  | $$  | $$  | $$ $$ $$| $$ /$$$$      | $$$$$$$/| $$$$$$$$| $$ /$$$$| $$$$$   
+# | $$      | $$__  $$| $$  $$$$| $$  | $$  | $$  | $$  $$$$| $$|_  $$      | $$____/ | $$__  $$| $$|_  $$| $$__/   
+# | $$      | $$  | $$| $$\  $$$| $$  | $$  | $$  | $$\  $$$| $$  \ $$      | $$      | $$  | $$| $$  \ $$| $$      
+# | $$$$$$$$| $$  | $$| $$ \  $$| $$$$$$$/ /$$$$$$| $$ \  $$|  $$$$$$/      | $$      | $$  | $$|  $$$$$$/| $$$$$$$$
+# |________/|__/  |__/|__/  \__/|_______/ |______/|__/  \__/ \______/       |__/      |__/  |__/ \______/ |________/
+#     
 @app.route("/", methods=["GET"])
 def homepage():
     user_id = session.get("key")
@@ -63,8 +73,30 @@ def homepage():
 # | $$      |  $$$$$$/|  $$$$$$/   | $$            \  $/    /$$$$$$| $$$$$$$$| $$/   \  $$| $$$$$$$$| $$  | $$
 # |__/       \______/  \______/    |__/             \_/    |______/|________/|__/     \__/|________/|__/  |__/
 #
+# IMAGE HANDLER
+#
+@app.route("/posts/<postname>/images/<imgname>", methods=["GET"])
+def serve_image(postname, imgname):
+    return send_from_directory("blogs", f"{postname}/images/{imgname}")
+#
+# OTHER FILE HANDLER
+#
+@app.route("/fileuploads/<container>/<filename>", methods=["GET"])
+def serve_file(container, filename):
+        return send_from_directory("fileuploads", f"{container}/{filename}")
+#
+# PLAINTEXT VIEWER
+#
+@app.route("/posts/<postname>/plaintext", methods=["GET"])
+def viewpost_plaintext(postname):
+    plaintext = get_post_content(postname)
+    response = make_response(plaintext, 200) # turns the text into a response object so we can give it a mimetype
+    response.mimetype = "text/plain"
+    return response
+#
 # REGULAR POST VIEWER + comments + voting
 #
+@limit_content_length(3 * 1024 * 1024)
 @app.route("/posts/<postname>", methods=["GET", "POST"])
 def viewpost(postname):
     if not re.compile("^[0-9\-]*$").match(postname): # make sure postname is safe
@@ -96,11 +128,21 @@ def viewpost(postname):
                 make_captcha=make_captcha,\
                 captcha_secret_key=CAPTCHA_KEY,# this will never be rendered, dont worry, just for the make captcha function\
                 comments=comments)
+#
+#   /$$$$$$   /$$$$$$  /$$      /$$ /$$      /$$ /$$$$$$$$ /$$   /$$ /$$$$$$$$/$$$$$$ 
+#  /$$__  $$ /$$__  $$| $$$    /$$$| $$$    /$$$| $$_____/| $$$ | $$|__  $$__/$$__  $$
+# | $$  \__/| $$  \ $$| $$$$  /$$$$| $$$$  /$$$$| $$      | $$$$| $$   | $$ | $$  \__/
+# | $$      | $$  | $$| $$ $$/$$ $$| $$ $$/$$ $$| $$$$$   | $$ $$ $$   | $$ |  $$$$$$ 
+# | $$      | $$  | $$| $$  $$$| $$| $$  $$$| $$| $$__/   | $$  $$$$   | $$  \____  $$
+# | $$    $$| $$  | $$| $$\  $ | $$| $$\  $ | $$| $$      | $$\  $$$   | $$  /$$  \ $$
+# |  $$$$$$/|  $$$$$$/| $$ \/  | $$| $$ \/  | $$| $$$$$$$$| $$ \  $$   | $$ |  $$$$$$/
+#  \______/  \______/ |__/     |__/|__/     |__/|________/|__/  \__/   |__/  \______/ 
+#    
     elif request.method == "POST":
+        commentsfile = f"blogs/{postname}/comments.json"
         if request.form["inputtype"] == "comment":
             comment = request.form["comment_content"][:CONF_MAX_COMMENT_LENGTH]
             if logged_in and role in ["user", "admin"]:
-                commentsfile = f"blogs/{postname}/comments.json"
                 if not os.path.exists(commentsfile): comments = []
                 else: 
                     with open(commentsfile, "r") as f: comments = json.loads(f.read())
@@ -123,39 +165,22 @@ def viewpost(postname):
                     return "Your comment has been submitted for review and may be accepted by the admins"
                 else:
                     abort(403) # TODO: make captcha failed page
+        elif request.form["inputtype"] == "deletecomment":
+            if (logged_in and role == "admin") or (logged_in and request.form["uname"] == uname): # only allow comment deletion if user is an admin or they match the username of the comment
+                with open(commentsfile, "r") as f: comments = json.loads(f.read())
+                comment = request.form["comment_content"]
+                user_role = request.form["user_role"]
+                posted_time = float(request.form["posted_time"])
+                username = uname if role == "user" else request.form["uname"]
+                commentdict = {"username":username, "role":user_role, "posted":posted_time, "content":comment}
+                comments = [i for i in comments if i != commentdict]
+                with open(commentsfile, "w") as f: f.write(json.dumps(comments))
+                read_cached.clear_entry(commentsfile)
+                return "Comment has been deleted!"
+            else:
+                abort(403)
 
-#
-# IMAGE HANDLER
-#
-@app.route("/posts/<postname>/images/<imgname>", methods=["GET"])
-def serve_image(postname, imgname):
-    return send_from_directory("blogs", f"{postname}/images/{imgname}")
-#
-# OTHER FILE HANDLER
-#
-@app.route("/fileuploads/<container>/<filename>")
-def serve_file(container, filename):
-        return send_from_directory("fileuploads", f"{container}/{filename}")
-#
-# PLAINTEXT VIEWER
-#
-@app.route("/posts/<postname>/plaintext", methods=["GET"])
-def viewpost_plaintext(postname):
-    plaintext = get_post_content(postname)
-    response = make_response(plaintext, 200) # turns the text into a response object so we can give it a mimetype
-    response.mimetype = "text/plain"
-    return response
 
-#
-#   /$$$$$$  /$$$$$$$  /$$      /$$ /$$$$$$ /$$   /$$
-#  /$$__  $$| $$__  $$| $$$    /$$$|_  $$_/| $$$ | $$
-# | $$  \ $$| $$  \ $$| $$$$  /$$$$  | $$  | $$$$| $$
-# | $$$$$$$$| $$  | $$| $$ $$/$$ $$  | $$  | $$ $$ $$
-# | $$__  $$| $$  | $$| $$  $$$| $$  | $$  | $$  $$$$
-# | $$  | $$| $$  | $$| $$\  $ | $$  | $$  | $$\  $$$
-# | $$  | $$| $$$$$$$/| $$ \/  | $$ /$$$$$$| $$ \  $$
-# |__/  |__/|_______/ |__/     |__/|______/|__/  \__/
-# 
 # MAIN ADMIN PAGES - all on one app.route to have them all controlled by the same login system - this reduces boilerplate and makes it faster to patch any possible security related issues
 #
 @app.route("/admin/<page>/<argument>", methods=["GET", "POST"])
@@ -181,13 +206,21 @@ def admin(page=None, argument=None):
 # KEEPALIVE - not a user facing page but for behind the scenes stuff
 #
     if page == "login-keepalive" and CONF_ENABLE_LOGIN_KEEPALIVE: # adds time to initial access, but rate limited. this is so that a script on the editor page can keep the user from being logged out before they can save their work. also keeps the last access topped up because its a ping to the admin page
-        if time.time() - logged_in_db[user_id]["last_keepalive"] > 110: 
+        if time.time() - logged_in_db[user_id]["last_keepalive"] > 110 and\
+                logged_in_db[user_id]["initial_access"] + CONF_TOTAL_STAY_LOGGED_IN_DURATION - time.time() <= 120: 
             logged_in_db[user_id]["initial_access"] += 120 
             logged_in_db[user_id]["last_keepalive"] = time.time()
             return ('', 204)
         else: abort(429)
 #
-# DASHBOARD
+#   /$$$$$$  /$$$$$$$  /$$      /$$ /$$$$$$ /$$   /$$       /$$$$$$$   /$$$$$$   /$$$$$$  /$$   /$$
+#  /$$__  $$| $$__  $$| $$$    /$$$|_  $$_/| $$$ | $$      | $$__  $$ /$$__  $$ /$$__  $$| $$  | $$
+# | $$  \ $$| $$  \ $$| $$$$  /$$$$  | $$  | $$$$| $$      | $$  \ $$| $$  \ $$| $$  \__/| $$  | $$
+# | $$$$$$$$| $$  | $$| $$ $$/$$ $$  | $$  | $$ $$ $$      | $$  | $$| $$$$$$$$|  $$$$$$ | $$$$$$$$
+# | $$__  $$| $$  | $$| $$  $$$| $$  | $$  | $$  $$$$      | $$  | $$| $$__  $$ \____  $$| $$__  $$
+# | $$  | $$| $$  | $$| $$\  $ | $$  | $$  | $$\  $$$      | $$  | $$| $$  | $$ /$$  \ $$| $$  | $$
+# | $$  | $$| $$$$$$$/| $$ \/  | $$ /$$$$$$| $$ \  $$      | $$$$$$$/| $$  | $$|  $$$$$$/| $$  | $$
+# |__/  |__/|_______/ |__/     |__/|______/|__/  \__/      |_______/ |__/  |__/ \______/ |__/  |__/
 #
     if page == None: # if no page is supplied, return the admin dashboard
         if request.method == "GET":
@@ -214,11 +247,18 @@ def admin(page=None, argument=None):
             else:
                 abort(422)
 #
-# Image Upload Page
+#  /$$$$$$$$/$$$$$$ /$$       /$$$$$$$$       /$$   /$$ /$$$$$$$  /$$        /$$$$$$   /$$$$$$  /$$$$$$$
+# | $$_____/_  $$_/| $$      | $$_____/      | $$  | $$| $$__  $$| $$       /$$__  $$ /$$__  $$| $$__  $$
+# | $$       | $$  | $$      | $$            | $$  | $$| $$  \ $$| $$      | $$  \ $$| $$  \ $$| $$  \ $$
+# | $$$$$    | $$  | $$      | $$$$$         | $$  | $$| $$$$$$$/| $$      | $$  | $$| $$$$$$$$| $$  | $$
+# | $$__/    | $$  | $$      | $$__/         | $$  | $$| $$____/ | $$      | $$  | $$| $$__  $$| $$  | $$
+# | $$       | $$  | $$      | $$            | $$  | $$| $$      | $$      | $$  | $$| $$  | $$| $$  | $$
+# | $$      /$$$$$$| $$$$$$$$| $$$$$$$$      |  $$$$$$/| $$      | $$$$$$$$|  $$$$$$/| $$  | $$| $$$$$$$/
+# |__/     |______/|________/|________/       \______/ |__/      |________/ \______/ |__/  |__/|_______/
 #
     elif page == "fileupload":
         if request.method == "GET":
-            return render_template("fileupload.html", filelinks = []) # dont worry, jijja2 automatically sanitises the stuff in imglinks
+            return render_template("fileupload.html", filelinks = []) # dont worry, jijja2 automatically sanitises the stuff in filelinks
         elif request.method == "POST":
             file = request.files["file"]
             if file == '':
@@ -240,8 +280,17 @@ def admin(page=None, argument=None):
                 thumbnail.save(f"fileuploads/{rand_name}/thumbnail.png")
             filelinks[f"{rand_name}/file{fileext}"] = {"filename":file.filename, "thumbnail":f"{rand_name}/thumbnail.png"}
             return render_template("fileupload.html", filelinks = filelinks, linksjson=json.dumps(filelinks))
+    elif page == "comment_manager":
+        pass # TODO: add functionality to accept/reject comments
 #
-# NEW POST OR EDIT POST
+#   /$$   /$$ /$$$$$$$$ /$$      /$$      /$$/$$$$$$$$ /$$$$$$$  /$$$$$$/$$$$$$$$       /$$$$$$$   /$$$$$$   /$$$$$$  /$$$$$$$$
+#  | $$$ | $$| $$_____/| $$  /$ | $$     /$$/ $$_____/| $$__  $$|_  $$_/__  $$__/      | $$__  $$ /$$__  $$ /$$__  $$|__  $$__/
+#  | $$$$| $$| $$      | $$ /$$$| $$    /$$/| $$      | $$  \ $$  | $$    | $$         | $$  \ $$| $$  \ $$| $$  \__/   | $$
+#  | $$ $$ $$| $$$$$   | $$/$$ $$ $$   /$$/ | $$$$$   | $$  | $$  | $$    | $$         | $$$$$$$/| $$  | $$|  $$$$$$    | $$
+#  | $$  $$$$| $$__/   | $$$$_  $$$$  /$$/  | $$__/   | $$  | $$  | $$    | $$         | $$____/ | $$  | $$ \____  $$   | $$
+#  | $$\  $$$| $$      | $$$/ \  $$$ /$$/   | $$      | $$  | $$  | $$    | $$         | $$      | $$  | $$ /$$  \ $$   | $$
+#  | $$ \  $$| $$$$$$$$| $$/   \  $$/$$/    | $$$$$$$$| $$$$$$$/ /$$$$$$  | $$         | $$      |  $$$$$$/|  $$$$$$/   | $$
+#  |__/  \__/|________/|__/     \__/__/     |________/|_______/ |______/  |__/         |__/       \______/  \______/    |__/
 #
     elif page in ["new", "edit"]:
         if page == "new" and argument != None: # new posts should not contain the argument
@@ -413,7 +462,14 @@ def admin(page=None, argument=None):
                 if page != "edit": shutil.rmtree(f"blogs/{name or 'SOMETHING HAS GONE TERRIBLY WRONG'}") 
                 abort(500)
 #
-# LOGIN
+#  /$$        /$$$$$$   /$$$$$$  /$$$$$$ /$$   /$$
+# | $$       /$$__  $$ /$$__  $$|_  $$_/| $$$ | $$
+# | $$      | $$  \ $$| $$  \__/  | $$  | $$$$| $$
+# | $$      | $$  | $$| $$ /$$$$  | $$  | $$ $$ $$
+# | $$      | $$  | $$| $$|_  $$  | $$  | $$  $$$$
+# | $$      | $$  | $$| $$  \ $$  | $$  | $$\  $$$
+# | $$$$$$$$|  $$$$$$/|  $$$$$$/ /$$$$$$| $$ \  $$
+# |________/ \______/  \______/ |______/|__/  \__/
 #
 @app.route("/login", methods=["GET", "POST"])
 @limit_content_length(3 * 1024 * 1024) # if your username and password are larger than 3MB youre probably a bit too paranoid... this keeps people from uploading a terabyte of password and making the cpu try and hash all of that
